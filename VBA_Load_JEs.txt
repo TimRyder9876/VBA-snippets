@@ -40,17 +40,14 @@ ADOErr:
 
 End Function
 
+------------------------------------------------------------------------------------
 
 Public Sub ImportData()
 On Error GoTo Err
     'DEFINE SQL VARIABLES FOR EXTRACTION
     Dim SQL1, SQL2 As String
     Dim strSQL_c As String
-    
-    'Removed strConnection2 and strODBCdriver variables for switch to ADODB connection 03-24-2021
-    'Dim strConnection, strOBDCtest, strConnection2 As String
-    'Dim strODBCdriver As String
-    
+
     Dim strConnection, strOBDCtest As String
     Dim myDatabase, myUserId, myPassword As String
     Dim myYear, myMonth As Integer
@@ -66,12 +63,9 @@ On Error GoTo Err
     myUserId = ActiveWorkbook.Sheets("Menu").Range("C7").Value
     myPassword = ActiveWorkbook.Sheets("Menu").Range("C9").Value
     
-    'Removed the driver name - 03-24-2021
-    'strODBCdriver = Trim(ListODBCDrivers())
-    
     'for ADODB.connection string
     'Changed to ADODB connection string 03-24-2021
-    strConnection = "Provider=OraOLEDB.oracle;Data Source=PRDACRM;User Id=" & myUserId & ";Password=" & myPassword
+    strConnection = "Provider=OraOLEDB.oracle;Data Source=DATABASE;User Id=" & myUserId & ";Password=" & myPassword
         
     strOBDCtest = TestConnection(strConnection)
     
@@ -93,7 +87,7 @@ On Error GoTo Err
 70    End If
         
     'Set the focus on this workbook
-80    Workbooks("KGEN_Non_Rev_Extract_Template.xlsm").Activate
+80    Workbooks("Non_Rev_Extract_Template.xlsm").Activate
         
     'Go to the Data sheet
     'Delete the data in Columns A though I
@@ -127,7 +121,7 @@ On Error GoTo Err
     '******* Begin creating the sql statement to extract data from Kgen *******
 250    SQL1 = _
          "select " & _
-         "'KGEN' as KGEN, " & _
+         "'FinanceDb' as FINANCEDB, " & _
          "'" & myMonth & "-" & myYear & "'" & " as Period, " & _
          "'DS810' as DS810, " & _
          "d.gl_account, " & _
@@ -172,16 +166,7 @@ On Error GoTo Err
     
 270    strSQL_c = SQL1 & SQL2
     '******* End creating the sql statement to extract data from Kgen *******
-    
-    'Build the odbc connection string to kgen oracle database
-' Removed because of switch to ADODB connection 03-24-2021
-'280    strConnection2 = "ODBC;DRIVER={" & strODBCdriver & "};server=PRDACRM;UID=" & myUserId & ";PWD=" & myPassword
-    'Create a query table and populate it in the data sheet in cell A1
-'290    With ActiveSheet.QueryTables.Add(Connection:=strConnection2, _
-'                                     Destination:=Range("A1"), _
-'                                     SQL:=strSQL_c)
-'     .Refresh BackgroundQuery:=False
-     
+         
     'Create a query table and populate it in the data sheet in cell A1 new 03-24-2021
 280 Set rstRecordset = New ADODB.Recordset
     rstRecordset.Open _
@@ -204,14 +189,6 @@ On Error GoTo Err
 330     .Protect Password:="Finance"
 340    End With
     
-  
-
-    'This is for adding formulas to the returned data
-    'With Sheets("Data")
-    ' .Range("I1").value = "Formula"
-    ' .Range("I2:I" & .Cells(.Rows.Count, "A").End(xlUp).Row).Formula = "=+F2+G2+H2"
-    'End With
-    
     'Go to Kgen to PeopleSoft sheet
 350    Sheets("Kgen to PeopleSoft").Select
     
@@ -221,10 +198,7 @@ On Error GoTo Err
     
 380    f1 = ActiveWorkbook.Sheets("Menu").Range("C11").Value
 390    f2 = ActiveWorkbook.Sheets("Menu").Range("C13").Value
-'400    fSave = "\\dfw2nap01\global\finance\fin_systems\work_area\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
-'400    fSave = "\\dfw2nap01\shrbk\revenue accounting\softrax\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
-' Changed 9-21-2021 due to drive mapping changes
-400    fSave = "\\corp.pvt\shares\shrbk\revenue accounting\softrax\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
+400    fSave = "\\serverName\Folder\Non_Revenue_JE_" & f1 & f2 & ".xlsm"
 410    ActiveWorkbook.SaveAs (fSave)
     
     'Hide Menu Sheet
@@ -237,9 +211,6 @@ Error_Input:
   Exit Sub
 
 Err:
- 'If Error(400) Then
- ' MsgBox "Error with sql or connecting id and password", "SQL Connection Error"
- 'End If
  MsgBox "Error on Line : " & Erl
 
 End Sub
@@ -285,9 +256,9 @@ Private Sub Workbook_Open()
     'Hide Menu Sheet
     Sheets("Menu").Visible = False
         
-    If ActiveWorkbook.Name = "KGEN_Non_Rev_Extract_Template.xlsm" Then
+    If ActiveWorkbook.Name = "Non_Rev_Extract_Template.xlsm" Then
     
-        Workbooks("KGEN_Non_Rev_Extract_Template.xlsm").Activate
+        Workbooks("Non_Rev_Extract_Template.xlsm").Activate
         
         'Unhide Menu Sheet
         Sheets("Menu").Visible = True
@@ -341,12 +312,6 @@ On Error Resume Next
     
     'Enable the Excel visual basic command options
     Application.CommandBars("Visual Basic").Enabled = True
-    
-    'Set Kgen workbook as active workbook
-    'Workbooks("kgen_test_vba (3) 01-30-19 - Copy.xlsm").Activate
-    
-    'Save the workbook
-    'ActiveWorkbook.Save
     
    
 End Sub
