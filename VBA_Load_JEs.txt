@@ -1,0 +1,373 @@
+Function TestConnection(ByVal strConnect As String) As String
+
+Dim con As ADODB.Connection
+Dim strOBDCtest As Boolean
+
+On Error GoTo ADOErr
+       
+ Set con = New ADODB.Connection
+    
+ con.Open strConnect
+
+ If con.State = 1 Then
+  'MsgBox "Connection Succeeded", vbInformation
+  TestConnection = "True"
+  con.Close
+  Set con = Nothing
+ End If
+
+ Exit Function
+
+ADOErr:
+
+     'Else
+        For Each vError In con.Errors
+            sErrors = sErrors & vError.Description & vbNewLine
+        Next vError
+        If sErrors > "" Then
+            MsgBox sErrors, vbExclamation
+            Set con = Nothing
+            TestConnection = "False"
+            Exit Function
+        Else
+            MsgBox "Connection Failed", vbExclamation
+            Set con = Nothing
+            TestConnection = "False"
+            Exit Function
+        End If
+    'End If
+
+
+End Function
+
+
+Public Sub ImportData()
+On Error GoTo Err
+    'DEFINE SQL VARIABLES FOR EXTRACTION
+    Dim SQL1, SQL2 As String
+    Dim strSQL_c As String
+    
+    'Removed strConnection2 and strODBCdriver variables for switch to ADODB connection 03-24-2021
+    'Dim strConnection, strOBDCtest, strConnection2 As String
+    'Dim strODBCdriver As String
+    
+    Dim strConnection, strOBDCtest As String
+    Dim myDatabase, myUserId, myPassword As String
+    Dim myYear, myMonth As Integer
+    Dim nName As Name
+    Dim c1, c2, c3, c4 As Integer
+    Dim f1, f2, fSave As String
+        
+    'Added veriables below to switch to an ADODB connection method 03-24-2021
+    Dim cnnConnect As New ADODB.Connection
+    Dim rstRecordset As ADODB.Recordset
+
+
+    myUserId = ActiveWorkbook.Sheets("Menu").Range("C7").Value
+    myPassword = ActiveWorkbook.Sheets("Menu").Range("C9").Value
+    
+    'Removed the driver name - 03-24-2021
+    'strODBCdriver = Trim(ListODBCDrivers())
+    
+    'for ADODB.connection string
+    'Changed to ADODB connection string 03-24-2021
+    strConnection = "Provider=OraOLEDB.oracle;Data Source=PRDACRM;User Id=" & myUserId & ";Password=" & myPassword
+        
+    strOBDCtest = TestConnection(strConnection)
+    
+    'TestConnection (strConnection)
+    If strOBDCtest = "False" Then
+     Exit Sub
+    End If
+
+        
+    'Set the length values of the input cells to the variables
+10    c1 = Len(Trim(ActiveWorkbook.Sheets("Menu").Range("C7").Value))
+20    c2 = Len(Trim(ActiveWorkbook.Sheets("Menu").Range("C9").Value))
+30    c3 = Len(Trim(ActiveWorkbook.Sheets("Menu").Range("C11").Value))
+40    c4 = Len(Trim(ActiveWorkbook.Sheets("Menu").Range("C13").Value))
+        
+    'Check to make sure all fields are populated
+50    If c1 = 0 Or c2 = 0 Or c3 = 0 Or c4 = 0 Then
+60     GoTo Error_Input
+70    End If
+        
+    'Set the focus on this workbook
+80    Workbooks("KGEN_Non_Rev_Extract_Template.xlsm").Activate
+        
+    'Go to the Data sheet
+    'Delete the data in Columns A though I
+90    With Sheets("Data")
+100     .Select
+110     .Unprotect Password:="Finance"
+120     .Range("A:I").Delete
+130    End With
+     
+    'Delete any data name that begin with "Data!ExternalData"
+140    For Each nName In ThisWorkbook.Names
+150      If Left(nName.Name, 17) = "Data!ExternalData" Then
+160        nName.Delete
+170      End If
+180    Next nName
+
+    'Go to Menu sheet
+    Sheets("Menu").Activate
+    
+    'Set the following variable to the cell values on the menu tab
+190    myDatabase = ActiveWorkbook.Sheets("Menu").Range("C5").Value
+200    myUserId = ActiveWorkbook.Sheets("Menu").Range("C7").Value
+210    myPassword = ActiveWorkbook.Sheets("Menu").Range("C9").Value
+220    myYear = ActiveWorkbook.Sheets("Menu").Range("C11").Value
+230    myMonth = ActiveWorkbook.Sheets("Menu").Range("C13").Value
+    
+    
+    'Go to Data sheet
+240    Sheets("Data").Activate
+    
+    '******* Begin creating the sql statement to extract data from Kgen *******
+250    SQL1 = _
+         "select " & _
+         "'KGEN' as KGEN, " & _
+         "'" & myMonth & "-" & myYear & "'" & " as Period, " & _
+         "'DS810' as DS810, " & _
+         "d.gl_account, " & _
+         "g.activity_type|| " & _
+         "case when trim(g.activity_sub_type) is null then '' else " & _
+         "'-'||g.activity_sub_type end ||':'|| g.account_type || " & _
+         "case when trim(g.charging_type) = 'LFC' then ':LFC' " & _
+         "when trim(g.charging_type) = 'RCK' then ':RCK' " & _
+         "when trim(g.product_type) is null then '' " & _
+         "when trim(g.product_type) in ('B','M','W','Y') then ':'||'Print' " & _
+         "when trim(g.product_type) in ('V') then ':'||'Digital' " & _
+         "else ':'|| G.PRODUCT_TYPE END as psft_je_line_description, " & _
+         "sum(g.debit_amt) as DEBIT, " & _
+         "sum(g.credit_amt) as CREDIT, " & _
+         "sum(g.debit_amt)-sum(g.credit_amt) as TOTAL "
+    
+260    SQL2 = _
+         "from " & _
+         "finance.gl_dump d " & _
+         "inner join finance.gl g " & _
+         "on g.gl_dump_id = d.gl_dump_id " & _
+         "inner join refread.ar_activity a " & _
+         "on g.activity_type = a.activity_type and " & _
+         "nvl(trim(g.activity_sub_type),'NULL') = nvl(trim(a.activity_sub_type),'NULL') " & _
+         "and a.effective_to_date > sysdate " & _
+         "where " & _
+         "g.extract_date >= to_date('" & myYear & "-" & myMonth & "-01','yyyy-mm-dd') and " & _
+         "g.extract_date <= last_day(to_date('" & myYear & "-" & myMonth & "-01','yyyy-mm-dd')) " & _
+         "group by " & _
+         "g.extract_date, " & _
+         "d.gl_account, " & _
+         "g.activity_type|| " & _
+         "case when trim(g.activity_sub_type) is null then '' else " & _
+         "'-'||g.activity_sub_type end ||':'|| g.account_type || " & _
+         "case when trim(g.charging_type) = 'LFC' then ':LFC' " & _
+         "when trim(g.charging_type) = 'RCK' then ':RCK' " & _
+         "when trim(g.product_type) is null then '' " & _
+         "when trim(g.product_type) in ('B','M','W','Y') then ':'||'Print' " & _
+         "when trim(g.product_type) in ('V') then ':'||'Digital' " & _
+         "else ':'|| g.product_type end " & _
+         "order by 1,2,3,4,5"
+    
+270    strSQL_c = SQL1 & SQL2
+    '******* End creating the sql statement to extract data from Kgen *******
+    
+    'Build the odbc connection string to kgen oracle database
+' Removed because of switch to ADODB connection 03-24-2021
+'280    strConnection2 = "ODBC;DRIVER={" & strODBCdriver & "};server=PRDACRM;UID=" & myUserId & ";PWD=" & myPassword
+    'Create a query table and populate it in the data sheet in cell A1
+'290    With ActiveSheet.QueryTables.Add(Connection:=strConnection2, _
+'                                     Destination:=Range("A1"), _
+'                                     SQL:=strSQL_c)
+'     .Refresh BackgroundQuery:=False
+     
+    'Create a query table and populate it in the data sheet in cell A1 new 03-24-2021
+280 Set rstRecordset = New ADODB.Recordset
+    rstRecordset.Open _
+        Source:=strSQL_c, _
+        ActiveConnection:=strConnection, _
+        CursorType:=adOpenDynamic, _
+        LockType:=adLockReadOnly, _
+        Options:=adCmdText
+290 With ActiveSheet.QueryTables.Add( _
+        Connection:=rstRecordset, _
+        Destination:=Range("A1"))
+  .Refresh BackgroundQuery:=False
+     
+
+300    End With
+    
+    'Protect the cells associated with the query result data
+310    With Sheets("Data")
+320     .Range("A1:H" & .Cells(.Rows.Count, "A").End(xlUp).Row).Locked = True
+330     .Protect Password:="Finance"
+340    End With
+    
+  
+
+    'This is for adding formulas to the returned data
+    'With Sheets("Data")
+    ' .Range("I1").value = "Formula"
+    ' .Range("I2:I" & .Cells(.Rows.Count, "A").End(xlUp).Row).Formula = "=+F2+G2+H2"
+    'End With
+    
+    'Go to Kgen to PeopleSoft sheet
+350    Sheets("Kgen to PeopleSoft").Select
+    
+    'Refresh the pivot table
+360    ActiveSheet.PivotTables("PivotTable1").RefreshTable
+370    ActiveSheet.PivotTables("PivotTable1").Update
+    
+380    f1 = ActiveWorkbook.Sheets("Menu").Range("C11").Value
+390    f2 = ActiveWorkbook.Sheets("Menu").Range("C13").Value
+'400    fSave = "\\dfw2nap01\global\finance\fin_systems\work_area\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
+'400    fSave = "\\dfw2nap01\shrbk\revenue accounting\softrax\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
+' Changed 9-21-2021 due to drive mapping changes
+400    fSave = "\\corp.pvt\shares\shrbk\revenue accounting\softrax\Kgen_Non_Revenue_JE_" & f1 & f2 & ".xlsm"
+410    ActiveWorkbook.SaveAs (fSave)
+    
+    'Hide Menu Sheet
+420    Sheets("Menu").Visible = False
+    
+    Exit Sub
+
+Error_Input:
+  MsgBox "Enter in all values", vbOKOnly, "Missing Parameters"
+  Exit Sub
+
+Err:
+ 'If Error(400) Then
+ ' MsgBox "Error with sql or connecting id and password", "SQL Connection Error"
+ 'End If
+ MsgBox "Error on Line : " & Erl
+
+End Sub
+
+Private Sub Workbook_Open()
+
+    Dim myValue As Variant
+    
+    'Check to see if the user's macro settings is set to trusted for the VBS Project object model
+    'Notify user and quit workbook if setting is not checked
+    If Not VBATrusted() Then
+        MsgBox "No Access to VB Project" & vbLf & _
+          "Please allow access in Trusted Sources" & vbLf & _
+          "(File > Options > Trust Center > Trust Center Settings > Macro Settings)"
+        Application.DisplayAlerts = False
+        Application.ActiveWindow.Close
+        ActiveWorkbook.Close
+        Application.DisplayAlerts = True
+    End If
+    
+   
+    'Close the VBA Editor
+    Application.VBE.MainWindow.Visible = False
+    
+    'Disable the Excel [Alt][F11] key combination to open the vba editor
+    Application.OnKey "%{F11}", "DisableAltF11"
+    
+    'Disable the Excel [Alt][F8] key combination to open the macro editor
+    Application.OnKey "%{F8}", "DisableAltF8"
+    
+    'Disable the Excel right click tab options on sheets
+    Application.CommandBars("Ply").Enabled = False
+    
+    'Disable the Excel development tools menu
+    Application.ShowDevTools = False
+    
+    'Disable the Excel visual basic command options
+    Application.CommandBars("Visual Basic").Enabled = False
+    
+    'Disable the Excel ribbon
+    Application.ExecuteExcel4Macro "Show.ToolBar(""Ribbon"", False)"
+    
+    'Hide Menu Sheet
+    Sheets("Menu").Visible = False
+        
+    If ActiveWorkbook.Name = "KGEN_Non_Rev_Extract_Template.xlsm" Then
+    
+        Workbooks("KGEN_Non_Rev_Extract_Template.xlsm").Activate
+        
+        'Unhide Menu Sheet
+        Sheets("Menu").Visible = True
+        
+        'Open the user form for the user to select their role
+        UserForm1.Show
+    
+        'Unprotect the workbook
+        Sheets("Menu").Select
+        ActiveSheet.Unprotect Password:="Finance"
+    
+        'Clear the data input field when the workbook opens
+        Range("C7:C13").Select
+        Selection.ClearContents
+        ActiveSheet.Range("C7").Select
+    
+        'Protect the workbook
+        ActiveSheet.Protect Password:="Finance"
+     End If
+    
+         
+End Sub
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+On Error Resume Next
+    'Unprotect the workbook
+    Sheets("Menu").Select
+    ActiveSheet.Unprotect Password:="Finance"
+    
+    'Clear the data input fields before the workbook closes
+    Range("C7:C13").Select
+    Selection.ClearContents
+    ActiveSheet.Range("C7").Select
+    
+    'Protect the workbook
+    ActiveSheet.Protect Password:="Finance"
+    
+    'Enable the Excel ribbon
+    Application.ExecuteExcel4Macro "Show.ToolBar(""Ribbon"", True)"
+    
+    'Enable the Excel [Alt][F11] key combination to open the vba editor
+    Application.OnKey "%{F11}", ""
+    
+    'Enable the Excel [Alt][F8] key combination to open the macro editor
+    Application.OnKey "%{F8}", ""
+    
+    'Enable the Excel right click tab options on sheets
+    Application.CommandBars("Ply").Enabled = True
+    
+    'Enable the Excel development tools menu
+    Application.ShowDevTools = True
+    
+    'Enable the Excel visual basic command options
+    Application.CommandBars("Visual Basic").Enabled = True
+    
+    'Set Kgen workbook as active workbook
+    'Workbooks("kgen_test_vba (3) 01-30-19 - Copy.xlsm").Activate
+    
+    'Save the workbook
+    'ActiveWorkbook.Save
+    
+   
+End Sub
+Sub test2()
+    Dim i As Integer
+    Dim j As Integer
+    
+    'This code is to cycle through menu options
+    For i = 1 To Application.CommandBars.Count
+        Debug.Print Application.CommandBars("Standard").Name
+        For j = 1 To Application.CommandBars("Standard").Controls.Count
+            Debug.Print , , , Application.CommandBars("Standard").Controls(j).Caption
+        Next
+    Next
+
+
+End Sub
+
+Function VBATrusted() As Boolean
+    On Error Resume Next
+    
+    'Check to see if the user's macro settings is set to trusted for the VBS Project object model
+    VBATrusted = (Application.VBE.VBProjects.Count) > 0
+End Function
