@@ -1,0 +1,1198 @@
+Option Compare Database
+
+
+Private Sub audit_type_Change()
+  'When Audit Type drop down list is selected
+  'show the proper textboxes based on the selection
+  
+  'If EXPENSE is selected
+  If Me!AUDIT_TYPE = "Expense" Then
+    Me!BUSINESS_UNIT.Visible = False
+    Me!BUSINESS_UNIT.Value = Empty
+    Me!VOUCHER_ID.Visible = False
+    Me!VOUCHER_ID.Value = Empty
+    Me!Vendor_Id.Visible = False
+    Me!Vendor_Id.Value = Empty
+    Me!Vendor_Name.Visible = False
+    Me!Vendor_Name.Value = Empty
+    
+    Me!Employee_Id.Visible = True
+    Me!DESCRIPTION.Visible = True
+    Me!Sheet_Id.Visible = True
+    Me!E_Approver_Id.Visible = True
+    
+  End If
+  
+  'If VOUCHER is selected
+  If Me!AUDIT_TYPE = "Voucher" Then
+    Me!BUSINESS_UNIT.Visible = True
+    Me!VOUCHER_ID.Visible = True
+    Me!Vendor_Id.Visible = True
+    Me!Vendor_Name.Visible = True
+    
+    Me!E_Approver_Id.Visible = False
+    Me!E_Approver_Id.Value = Empty
+    Me!Employee_Id.Visible = False
+    Me!Employee_Id.Value = Empty
+    Me!DESCRIPTION.Visible = True
+    Me!DESCRIPTION.Value = Empty
+    Me!Sheet_Id.Visible = False
+    Me!Sheet_Id.Value = Empty
+
+  End If
+  
+  
+
+
+End Sub
+
+Private Sub cmd_import_ps_data_Click()
+On Error GoTo Err_cmd_import_ps_data_Click
+
+    Dim AudRate As Integer
+    Dim ExpCnt As Integer
+    Dim ExpMaxId As Integer
+    Dim ExpMinId As Integer
+    Dim ExpRndNum As Integer
+    Dim FromDateLookup1 As Variant
+    Dim FromDateLookup2 As Variant
+    Dim Log1 As String
+    Dim rstTmpCount As Integer
+    Dim rstTmpUnique As Recordset
+    Dim rstStgCount As Integer
+    Dim rstStgUnique As Recordset
+    Dim rstUniqueFldRef As String
+    Dim stAuditType As String
+    Dim stFromDate As Variant
+    Dim stImportQryName As String
+    Dim stInitLoadTbl As String
+    Dim strCnct As String
+    Dim stProdQuery1 As String
+    Dim stProdQuery2 As String
+    Dim stProdQuery3 As String
+    Dim stPSQuery As String
+    Dim stPSQuery_2 As String
+    Dim stQry As String
+    Dim stStageQuery As String
+    Dim stStgLoadTbl As String
+    Dim stStgPartQuery As String
+    Dim stStgPartType As String
+    Dim stStgUniqueQry As String
+    Dim stSUniqueField As String
+    Dim stTempUniqueQry As String
+    Dim stTmpQuery As String
+    Dim stToDate As Variant
+    Dim ToDateLookup1 As Variant
+    Dim ToDateLookup2 As Variant
+    Dim var1 As Variant
+    Dim var2 As Variant
+    Dim var3 As Variant
+    Dim VchrCnt As Integer
+    Dim X As Integer
+        
+    'Set stImportQryName variable to the PeopleSoft import to run on the form
+    stImportQryName = Me!Ps_Query_List.Value
+    
+    'Set stFromDate variable to the FROM DATE entered on the form
+    stFromDate = Me!From_Date.Value
+    
+    'Set stToDate variable to the To DATE entered on the form
+    stToDate = Me!To_Date.Value
+    
+    'Check 1 to make sure the proper values are entered on the form to perform an import from PeopleSoft
+    If (IsNull(stFromDate) Or IsNull(stToDate)) And stImportQryName <> "Employees" Then
+        MsgBox ("Please enter the date values when selecting vouchers or expenses to load.")
+        Exit Sub
+    End If
+    
+    'Check 2 to make sure the proper values are entered on the form to perform an import from PeopleSoft
+    If stImportQryName <> "Employees" Then
+       If DateDiff("d", stFromDate, stToDate) < 0 Then
+       MsgBox ("The 'From Date' must be less than or equal to the 'To Date'.")
+       Exit Sub
+       End If
+    End If
+    
+    
+    'FOR EXPENSE AND VOUCHER IMPORTS - Check to make sure any part of the date range selected has not already loaded
+    If stImportQryName <> "Employees" Then
+        FromDateLookup1 = DLookup("[FROM_DATE]", "TBL_IMPORT_LOG", "[IMPORT_TYPE] = '" & stImportQryName & "' and [FROM_DATE] between #" & stFromDate & "# AND #" & stToDate & "#")
+        ToDateLookup1 = DLookup("[TO_DATE]", "TBL_IMPORT_LOG", "[IMPORT_TYPE] = '" & stImportQryName & "' and [TO_DATE] BETWEEN #" & stFromDate & "# AND #" & stToDate & "#")
+        FromDateLookup2 = DLookup("[FROM_DATE]", "TBL_IMPORT_LOG", "[IMPORT_TYPE] = '" & stImportQryName & "' and [FROM_DATE] <= #" & stFromDate & "# AND [TO_DATE] >= #" & stFromDate & "#")
+        ToDateLookup2 = DLookup("[FROM_DATE]", "TBL_IMPORT_LOG", "[IMPORT_TYPE] = '" & stImportQryName & "' and [FROM_DATE] <= #" & stToDate & "# AND [TO_DATE] >= #" & stToDate & "#")
+        If Not IsNull(FromDateLookup1) Or Not IsNull(ToDateLookup1) Or Not IsNull(FromDateLookup2) Or Not IsNull(ToDateLookup2) Then
+          MsgBox ("Based on the dates " & stFromDate & " and " & stToDate _
+                & " entered, part of the date range is already in the system.")
+          Exit Sub
+         End If
+    End If
+    
+    'Turn off warning messages Access creates on action queries
+    DoCmd.SetWarnings False
+    
+    'Retrieve the temporary table name to load the PeopleSoft data too
+    stInitLoadTbl = DLookup("[INI_LOAD_TABLE]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+    
+    'Retrieve the PeopleSoft query to run
+    stPSQuery = DLookup("[PS_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+    
+    
+    'For Expense or Voucher Imports - Append the date range to the PeopleSoft Query
+    If stInitLoadTbl <> "tbl_emp_org_information" Then
+    
+        If stInitLoadTbl = "tbl_ps_voucher_temp_load" Then
+            stPSQuery_2 = DLookup("[PS_QUERY_2]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+         Else
+            stPSQuery_2 = " "
+         End If
+    
+
+    stPSQuery = stPSQuery _
+               & " BETWEEN TO_DATE('" & stFromDate & "','MM/DD/YYYY') AND TO_DATE('" & stToDate & "','MM/DD/YYYY')" _
+               & stPSQuery_2
+    
+    
+    End If
+    
+    'Retrieve the name of the query to run to append the PeopleSoft query data to the temporary table
+    stTmpQuery = DLookup("[TMP_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+    
+    'Delete the temporary table data
+    DoCmd.RunSQL "Delete " & stInitLoadTbl & ".* from " & stInitLoadTbl
+        
+    'Delete the old PeopleSoft query
+    DoCmd.DeleteObject acQuery, "PS_IMPORT_QUERY"
+    
+    'Create the new PeopleSoft query
+    strCnct = "ODBC;DRIVER={Oracle in ORA122CL_32};DBQ=DATABASE;UID=FINAUDIT"
+    Call CreateSPT("PS_IMPORT_QUERY", stPSQuery, strCnct)
+    
+    'Run the append query against the PeopleSoft query to populate the temporary import table
+    'If import if for Employees, the data will load straight to production
+    DoCmd.OpenQuery stTmpQuery, acNormal, acEdit
+    
+    'Retrieve the name of the Staging table where the Temporary data will append data too
+    stStgLoadTbl = DLookup("[STG_LOAD_TABLE]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+    
+    'FOR EXPENSE AND VOUCHER IMPORTS
+    If stStgLoadTbl <> "NA" Then
+      
+      'Delete the staging table data
+      DoCmd.RunSQL "Delete " & stStgLoadTbl & ".* from " & stStgLoadTbl
+      
+      'Retrieve the name of the query for finding unique records within the Expense or Voucher loads
+      stTempUniqueQry = DLookup("[TMP_UNIQUE_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'Retrieve the percentage value of imported records to set to be required audits
+      AudRate = DLookup("[percentage]", "tbl_audit_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'Retrieve the key fields that make an Expense or Voucher record unique
+      stSUniqueField = DLookup("[STG_UNIQUE_FLD]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'Set the rstTmpUnique recordset to the temporary query for unique records
+      Set rstTmpUnique = CurrentDb.OpenRecordset(stTempUniqueQry)
+      
+      'Set rstTmpCount to the count of records in the unique temporary query
+      rstTmpCount = rstTmpUnique.RecordCount
+      
+      'With the temporary query - cycle through the records until the end of the file And append them to the staging table
+      With rstTmpUnique
+         Do Until .EOF
+         
+           'Determine the organizational level of the employee associated with the expense or voucher
+           var1 = DLookup("[EMPLID]", "TBL_EMP_ORG_INFORMATION", "[ORG_LEVEL] NOT IN (1,2) AND [EMPLID] = '" & rstTmpUnique.Fields(1).Value & "'")
+           
+           'FOR EXPENSES AND VOUCHER IMPORTS - EMPLOYEES NOT IN ORG LEVEL 1 OR 2
+           If Not IsNull(var1) Then
+             rstUniqueFldRef = rstTmpUnique.Fields(0).Value
+             
+             'Retrieve the staging query to run to move the record from temp to stage environment
+             stStageQuery = DLookup("[STG_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+             
+             'Append the record to the staging table
+             DoCmd.RunSQL stStageQuery & "='" & rstUniqueFldRef & "'"
+           End If
+           
+             'Move to next record in the temporary query
+             .MoveNext
+             
+         Loop
+      End With
+      
+      'Close the unique temporary query recordset
+      rstTmpUnique.Close
+      
+      'Set the recordset variable rstTmpUnique to nothing
+      Set rstTmpUnique = Nothing
+      
+            
+      'FOR EXPENSES AND VOUCHER IMPORTS - AUDIT PERCENTAGE RATE NOT EQUAL TO 100 PERCENT
+      If AudRate <> 100 Then
+        
+        'Ensure the required audit record count is always at least the the percentage listed
+        'Population is based on the total unique temporary records vs the total unique staging records
+        If (rstTmpCount * (AudRate / 100)) - Int(rstTmpCount * (AudRate / 100)) > 0 Then
+           ExpCnt = Int(rstTmpCount * (AudRate / 100)) + 1
+           Else: ExpCnt = Int(rstTmpCount * (AudRate / 100))
+        End If
+        
+        'Set the looping counter to 1
+        X = 1
+        
+        'Retrieve the name of the staging unique query
+        stStgUniqueQry = DLookup("[STG_UNIQUE_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+       
+        'Set the rstStgUnique recordset to the staging query for unique records
+        Set rstStgUnique = CurrentDb.OpenRecordset(stStgUniqueQry)
+        
+        'Set rstStgCount to the count of records in the unique staging query
+        rstStgCount = rstStgUnique.RecordCount
+      
+        'Move to the first record in the unique staging query
+        rstStgUnique.MoveFirst
+        
+        'FOR EXPENSES AND VOUCHERS - SET THE REQUIRED AUDIT RECORDS IN THE STAGING TABLE
+        Do While X <= ExpCnt
+        
+          'Random number is based on the Staging record count and not the Temporary Count
+          ExpRndNum = Int(rstStgCount * Rnd)
+          
+          If ExpRndNum <> 0 Then
+          
+            'Move to the randomly selected record in the staging query
+            rstStgUnique.Move (ExpRndNum - 1)
+            
+            'Set the Unique record indicator value to the first field value in the staging query
+            rstUniqueFldRef = rstStgUnique.Fields(0).Value
+            
+            'Retrieve the required audit flag value for the audit import type
+            stStgPartType = DLookup("[PARTIAL_TYPE]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+            
+            'Check to see if the record selected to be a required audit has already been selected
+            var2 = DLookup("[" & stSUniqueField & "]", "TBL_PS_" & stImportQryName & "_STAGE_LOAD", "[" & stSUniqueField & "]= '" & rstUniqueFldRef & "' AND [TYPE]<> '" & stStgPartType & "'")
+            
+            var3 = 0
+            
+            'Check to see if the record selected has any fYP Expense types that will be ignored
+            If stImportQryName = "Expense" Then
+              var3 = DSum("[" & stSUniqueField & "]", "TBL_PS_" & stImportQryName & "_STAGE_LOAD", "[" & stSUniqueField & "]= '" & rstUniqueFldRef & "' AND [EXPENSE_TYPE] In ('FYP','ATR')")
+            End If
+                      
+            'For records that have not been selected as required audits and employee is active
+            If Not IsNull(var2) And rstStgUnique.Fields(1).Value = "A" And Nz(var3, 0) = 0 Then
+            
+            
+            'For records that have not been selected as required audits and employee is active
+            'If Not IsNull(var2) And rstStgUnique.Fields(1).Value = "A" Then '**** old code before 4-5-18 ***
+              
+              'Retrieve the staging query to set the the record to be a required audit
+              stStgPartQuery = DLookup("[STG_PARTIAL_QUERY]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+              
+              'Run the query to set the record to be a required audit
+              DoCmd.RunSQL stStgPartQuery & "='" & rstUniqueFldRef & "'"
+              
+              'Add one to the looping counter
+              X = X + 1
+             
+            End If
+          
+          End If
+          
+          'Move to the first record in the Staging unique query
+          rstStgUnique.MoveFirst
+        
+        Loop
+      
+      End If
+      
+      'Close the unique staging query recordset
+      rstStgUnique.Close
+      
+      'Set the recordset variable rstStgUnique to nothing
+      Set rstStgUnique = Nothing
+      
+      'FOR EXPENSES AND VOUCHERS - MOVE STAGING TABLE DATA TO PRODUCTION
+      
+      'Retrieve query name to create production header records for Expenses and Vouchers
+      stProdQuery1 = DLookup("[PRD_QUERY_1]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'Run query to create the production header records for Expenses and Vouchers
+      DoCmd.OpenQuery stProdQuery1, acNormal, acEdit
+      
+      'Retrieve query name to create production detail records for Expenses
+      stProdQuery2 = DLookup("[PRD_QUERY_2]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'FOR EXPENSES
+      If stProdQuery2 <> "NA" Then
+      
+          'Run query to create the production detail records for Expenses
+          DoCmd.OpenQuery stProdQuery2, acNormal, acEdit
+      
+      End If
+      
+      'Retrieve query name to create production audit research records for Expenses and Vouchers
+      stProdQuery3 = DLookup("[PRD_QUERY_3]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE] = '" & stImportQryName & "'")
+      
+      'Run query to create the production audit research records for Expenses and Vouchers
+      DoCmd.OpenQuery stProdQuery3, acNormal, acEdit
+      
+      'CREATE LOG FILES FOR THE EXPENSE AND VOUCHER IMPORTS
+      Log1 = (stImportQryName & " data has loaded. " & (rstTmpCount) & " records were pulled from PS. " _
+             & rstStgCount & " records were move to production. " _
+             & ExpCnt & " records were set to be required for auditing for a rate of " _
+             & Round((ExpCnt / rstTmpCount * 100), 2) & "% for the PeopleSoft pull.")
+      DoCmd.RunSQL "Insert into tbl_import_log" _
+             & "(IMPORT_LOG, IMPORT_TYPE, FROM_DATE, TO_DATE) " _
+             & "SELECT '" & Log1 & "','" & stImportQryName & "','" & stFromDate & "','" & stToDate & "'"
+      MsgBox (Log1)
+
+
+    Else
+      MsgBox (stImportQryName & " Data Has Loaded.")
+    End If
+   
+    
+    'Turn on warning messages Access creates on action queries
+    DoCmd.SetWarnings True
+    
+    
+Exit_cmd_import_ps_data_Click:
+    Exit Sub
+
+Err_cmd_import_ps_data_Click:
+    MsgBox Err.DESCRIPTION
+    Resume Exit_cmd_import_ps_data_Click
+    
+End Sub
+
+
+Private Sub Form_Close()
+
+        'Turn off warning messages Access creates on action queries
+        DoCmd.SetWarnings False
+        
+        DoCmd.RunSQL "UPDATE tbl_audit_form_default_values " _
+                   & "SET tbl_audit_form_default_values.AUDIT_FLTR2 = AUDIT_FLTR1"
+        
+        'Turn on warning messages Access creates on action queries
+        DoCmd.SetWarnings True
+
+End Sub
+
+Private Sub Form_Load()
+        
+        DoCmd.Maximize
+        Me!AUDIT_FORM.Visible = False
+        Me!BUSINESS_UNIT.Visible = False
+        Me!DESCRIPTION.Visible = False
+        Me!E_Approver_Id.Visible = False
+        Me!Employee_Id.Visible = False
+        Me!Sheet_Id.Visible = False
+        Me!Vendor_Id.Visible = False
+        Me!Vendor_Name.Visible = False
+        Me!VOUCHER_ID.Visible = False
+        
+        Me!AUDIT_TYPE.Value = Empty
+        Me!BUSINESS_UNIT.Value = Empty
+        Me!chk_completed.Value = Empty
+        Me!chk_required_audit.Value = 0
+        Me!DESCRIPTION.Value = Empty
+        Me!E_Approver_Id.Value = Empty
+        Me!Employee_Id.Value = Empty
+        Me!From_Date.Value = Empty
+        Me!From_Date2.Value = Empty
+        Me!Ps_Query_List.Value = Empty
+        Me!Sheet_Id.Value = Empty
+        Me!To_Date.Value = Empty
+        Me!To_Date2.Value = Empty
+        Me!Vendor_Id.Value = Empty
+        Me!Vendor_Name.Value = Empty
+        Me!VOUCHER_ID.Value = Empty
+        
+        
+
+        'Turn off warning messages Access creates on action queries
+        DoCmd.SetWarnings False
+        
+        DoCmd.RunSQL "UPDATE tbl_audit_form_default_values " _
+                   & "SET tbl_audit_form_default_values.AUDIT_FLTR2 = AUDIT_FLTR1"
+        
+        'Turn on warning messages Access creates on action queries
+        DoCmd.SetWarnings True
+        
+        
+        
+End Sub
+
+
+
+Private Sub CMD_REFRESH_Click()
+On Error GoTo Err_CMD_REFRESH_Click
+
+    'REFRESH THE VOUCHER AND EXPENSE SCREENS WHEN A SEARCH IS PERFORMED
+    
+    Dim stAudit As Variant
+    Dim strAuditType1  As String
+    Dim strAuditType2 As Variant
+    Dim stFromDate As Variant
+    Dim strFrm As SubForm
+    Dim stToDate As Variant
+    
+    stFromDate = Me!From_Date2.Value
+    stToDate = Me!To_Date2.Value
+    stAudit = Me!AUDIT_TYPE.Value
+    
+    If IsNull(stAudit) Then
+        MsgBox ("Please select the audit type")
+        Exit Sub
+    End If
+    
+    If (IsNull(stFromDate) And Not IsNull(stToDate)) Or (Not IsNull(stFromDate) And IsNull(stToDate)) Then
+       MsgBox ("The 'From Date' and the 'To Date' must both be populated if one value is entered.")
+       Exit Sub
+    End If
+    
+    
+    If (Not IsNull(stFromDate) And Not IsNull(stToDate)) And (stFromDate > stToDate) Then
+       MsgBox ("The 'From Date' must be less than or equal to the 'To Date'.")
+       Exit Sub
+    End If
+    
+    
+    strAuditType1 = DLookup("[AUDIT_FLTR1]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE]='" & Me!AUDIT_TYPE.Value & "'")
+    Set strFrm = Me![AUDIT_FORM]
+    With strFrm
+        .Visible = True
+        .SourceObject = "SFRM_PS_" & strAuditType1 & "_MASTER"
+        .Requery
+    End With
+    strAuditType2 = DLookup("[AUDIT_FLTR2]", "TBL_AUDIT_FORM_DEFAULT_VALUES", "[LOAD_FILE]='" & Me!AUDIT_TYPE.Value & "'")
+    If strAuditType2 = strAT Then
+                
+                'Turn off warning messages Access creates on action queries
+                DoCmd.SetWarnings False
+                
+                DoCmd.RunSQL "UPDATE tbl_audit_form_default_values " _
+                       & "SET tbl_audit_form_default_values.AUDIT_FLTR2 = 'X' " _
+                       & "WHERE tbl_audit_form_default_values.AUDIT_FLTR1='" & strAuditType1 & "'"
+                
+                'Turn on warning messages Access creates on action queries
+                DoCmd.SetWarnings True
+                
+                strFrm.Requery
+    End If
+
+Exit_CMD_REFRESH_Click:
+    Exit Sub
+
+Err_CMD_REFRESH_Click:
+    MsgBox Err.DESCRIPTION
+    Resume Exit_CMD_REFRESH_Click
+    
+End Sub
+
+Private Sub cmd_save_record_Click()
+On Error GoTo Err_cmd_save_record_Click
+
+    'Save record
+    DoCmd.DoMenuItem acFormBar, acRecordsMenu, acSaveRecord, , acMenuVer70
+
+Exit_cmd_save_record_Click:
+    Exit Sub
+
+Err_cmd_save_record_Click:
+    MsgBox Err.DESCRIPTION
+    Resume Exit_cmd_save_record_Click
+    
+End Sub
+
+Private Sub cmd_open_audit_findings_frm_Click()
+On Error GoTo Err_cmd_open_audit_findings_frm_Click
+
+    'OPEN THE AUDIT FINDINGS SCREEN TO PERFORM MAINTENANCE
+
+    Dim stDocName As String
+    Dim stLinkCriteria As String
+
+    Set strFrm = Me![AUDIT_FORM]
+    With strFrm
+        .Visible = True
+        .SourceObject = "sfrm_Audit_findings_entry"
+        .Requery
+    End With
+   
+
+Exit_cmd_open_audit_findings_frm_Click:
+    Exit Sub
+
+Err_cmd_open_audit_findings_frm_Click:
+    MsgBox Err.DESCRIPTION
+    Resume Exit_cmd_open_audit_findings_frm_Click
+    
+End Sub
+
+Private Sub cmd_CreateAuditLetters_Click()
+On Error GoTo Err_cmd_CreateAuditLetters_Click
+
+    'CREATE AND EMAIL AUDIT LETTERS
+    
+    Select Case MsgBox("Create Audit Letters?", vbOKCancel, "Audit Letters")
+      Case vbOK
+        'Do Nothing
+      Case vbCancel
+        Exit Sub
+    End Select
+
+    'Fields from the query qry_export_audit_findings_to_word used to create the expense letters
+    Dim AMOUNT_DUE1 As Currency
+    Dim AMOUNT_DUE2 As Currency
+    Dim APPROVAL_DT As String
+    Dim APPROVER_NAME As String
+    Dim CONTACT1 As String
+    Dim CONTACT2 As String
+    Dim CONTACT3 As String
+    Dim CORRECTED_EXP_AMT As Currency
+    Dim CORRECTED_EXP_TYPE As String
+    Dim EMAILED_IPA_DATE As String
+    Dim EMAILED_NUM As Long
+    Dim EMAILID3 As String
+    Dim EMAILID4 As String
+    Dim EMPLOYEE_NAME1 As String
+    Dim EMPLOYEE_NAME2 As String
+    Dim Expense_Type As String
+    Dim FINAL_PAYMENT_AMT As Currency
+    Dim NBR_PAYMENTS As String
+    Dim PAYMENT_AMT As Currency
+    Dim PAYROLL_DEDUCTION As String
+    Dim SHEET_ID1 As String
+    Dim SHEET_ID2 As String
+    Dim SHEET_ID3 As String
+    Dim TOTAL_AMT As Currency
+    Dim TXN_AMT As Currency
+       
+    'Fields from the query qry_export_voucher_findings_to_word used to create the voucher letters
+    Dim BUSINESS_UNIT As String
+    Dim CORRECT_GL_CODE As String
+    Dim CORRECTED_FREIGHT_TAX_FUEL_AMT As Currency
+    Dim EMPLOYEE As String
+    Dim ENTERED_DT As String
+    Dim FREIGHT_TAX_FUEL_AMT As Currency
+    Dim GL_CODE As String
+    Dim GROSS_AMT As Currency
+    Dim Invoice_ID As String
+    Dim SUP_EMAILID As String
+    Dim Vendor_Id As String
+    Dim Vendor_Name As String
+    Dim VOUCHER_ID1 As String
+    Dim VOUCHER_ID2 As String
+    
+    'Fields used for both expense and voucher letters
+    Dim AUDIT_DESCRIPTION As String
+    Dim AUDIT_ID As String
+    Dim AUDIT_FINDING_ID As String
+    Dim EMAILID As String
+    Dim EMAILID2 As String
+    Dim EMPLID As String
+    Dim REQUIRED_ACTION As String
+    
+    'Variables for Word document creation
+    Dim objDoc As Word.Document
+    Dim objWord As Word.Application
+    Dim rstUnique As Recordset
+    Dim strPath As String
+    Dim strWordTemplate1 As String
+    Dim strWordTemplate2 As String
+    Dim strVchTemplate As String
+    
+    'Variables for CDO email using SMTP
+    Const cdoSendUsingPort = 2
+    Dim EMAIL As String
+    Dim iMsg As Object
+    Dim iCfg As Object
+    Dim iFlds As Object
+    Dim schema As String
+    Dim strATTACH As String
+    Dim strBODY As String
+    
+    'Change the mouse pointer to an hourglass
+    DoCmd.Hourglass True
+   
+    'Set directory path for letter creation
+    strPath = "\\Server\folder\Accounts Payable\AP Audit\Audit_Letters\"
+    
+    'Assign Expense Letter Word Template to strWordTemplate1 variable
+    strWordTemplate1 = strPath & "ExpAuditTemplate.dot"
+    
+    'Assign Expense Payment Plan Word Template to strWordTemplate2 variable
+    strWordTemplate2 = strPath & "InstallPlanAuthTemplate.dot"
+    
+    'Assign Voucher Letter Word Template to strVchTemplate variable
+    strVchTemplate = strPath & "VoucherAuditTemplate.dot"
+    
+'SMTP CONFIGURATION INFORMATOIN
+    
+    'Create a CDO configuration object
+    Set iCfg = CreateObject("CDO.Configuration")
+    
+    'Assign a schema path
+    schema = "http://schemas.microsoft.com/cdo/configuration/"
+    With iCfg.Fields
+       
+       'SMTP CDO Port (2)
+       .Item(schema & "sendusing") = cdoSendUsingPort
+       
+       'SMTP Server Port
+       .Item(schema & "smtpserverport") = 25
+       
+       'SMTP server alias name
+       .Item(schema & "smtpserver") = "emailserver"
+       
+       'SMTP sender email address
+       .Item(schema & "sendemailaddress") = "ApAudit@business.com"
+       
+       'Update the fields within the object iCFG
+       .Update
+    
+    End With
+    
+    
+    'Open the Word application
+    Set objWord = New Word.Application
+    
+    'Set the rstUnique recordset to the query results for expense letters to create
+    Set rstUnique = CurrentDb.OpenRecordset("qry_export_audit_findings_to_word")
+    
+    
+    With rstUnique
+    
+      'Cycle through each record within the expense letter query
+      Do Until .EOF
+      
+        'ASSIGN VALUES TO THE VARIABLES FROM THE EXPENSE LETTER QUERY RESULT FIELDS
+        EMPLOYEE_NAME1 = Nz(rstUnique.Fields(0).Value)
+        APPROVER_NAME = Nz(rstUnique.Fields(1).Value)
+        SHEET_ID1 = Nz(rstUnique.Fields(2).Value)
+        APPROVAL_DT = Nz(rstUnique.Fields(3).Value)
+        EMPLOYEE_NAME2 = Nz(rstUnique.Fields(4).Value)
+        SHEET_ID2 = Nz(rstUnique.Fields(5).Value)
+        Expense_Type = Nz(rstUnique.Fields(6).Value)
+        TOTAL_AMT = Nz(rstUnique.Fields(7).Value)
+        TXN_AMT = Nz(rstUnique.Fields(8).Value)
+        CORRECTED_EXP_AMT = Nz(rstUnique.Fields(9).Value)
+        AMOUNT_DUE1 = Nz(rstUnique.Fields(10).Value)
+        CORRECTED_EXP_TYPE = Nz(rstUnique.Fields(11).Value)
+        AUDIT_DESCRIPTION = Nz(rstUnique.Fields(12).Value)
+        REQUIRED_ACTION = Nz(rstUnique.Fields(13).Value)
+        AUDIT_ID = Nz(rstUnique.Fields(14).Value)
+        AUDIT_FINDING_ID = Nz(rstUnique.Fields(15).Value)
+        EMAIL = Nz(rstUnique.Fields(16).Value)
+        EMPL_ID = Nz(rstUnique.Fields(17).Value)
+        NBR_PAYMENTS = Nz(rstUnique.Fields(18).Value)
+        PAYMENT_AMT = Nz(rstUnique.Fields(19).Value)
+        FINAL_PAYMENT_AMT = Nz(rstUnique.Fields(20).Value)
+        AMOUNT_DUE2 = Nz(rstUnique.Fields(21).Value)
+        SHEET_ID3 = Nz(rstUnique.Fields(22).Value)
+        PAYROLL_DEDUCTION = Nz(rstUnique.Fields(23).Value)
+        EMAILED_IPA_DATE = Nz(rstUnique.Fields(24).Value)
+        EMAILED_NUM = Nz(rstUnique.Fields(25).Value)
+        EMAILID2 = Nz(rstUnique.Fields(26).Value)
+        EMAILID3 = Nz(rstUnique.Fields(27).Value)
+        EMAILID4 = Nz(rstUnique.Fields(28).Value)
+        
+        'CREATE AND EMAIL EXPENSE LETTERS
+        
+        'Create Expense Letter if the letter has not already been mailed 3 times or is marked for payroll deductions
+        If EMAILED_NUM < 3 And PAYROLL_DEDUCTION = False Then
+        
+          'Create a new Word document using the ExpAuditTemplate.dot template
+          Set objDoc = objWord.Documents.Add(strWordTemplate1)
+        
+          'POPULATE THE BOOKMARKS WITHIN THE WORD DOCUMENT WITH THE VALUES IN THE EXPENSE LETTER QUERY
+          'NOTE - IF A BOOKMARK NAME CHANGES ON THE TEMPLATE - THIS MUST BE UPDATED
+          
+          'Assign the EMPLOYEE_NAME1 Word bookmark a value
+          objDoc.Bookmarks("EMPLOYEE_NAME1").Select
+          objWord.Selection.Text = (CStr(EMPLOYEE_NAME1))
+                          
+          'Assign the APPROVER_NAME Word bookmark a value
+          objDoc.Bookmarks("APPROVER_NAME").Select
+          objWord.Selection.Text = (CStr(APPROVER_NAME))
+             
+          'Assign the SHEET_ID1 Word bookmark a value
+          objDoc.Bookmarks("SHEET_ID1").Select
+          objWord.Selection.Text = (CStr(SHEET_ID1))
+             
+          'Assign the APPROVAL_DT Word bookmark a value
+          objDoc.Bookmarks("APPROVAL_DT").Select
+          objWord.Selection.Text = (CStr(APPROVAL_DT))
+             
+          'Assign the EMPLOYEE_NAME2 Word bookmark a value
+          objDoc.Bookmarks("EMPLOYEE_NAME2").Select
+          objWord.Selection.Text = (CStr(EMPLOYEE_NAME2))
+             
+          'Assign the SHEET_ID2 Word bookmark a value
+          objDoc.Bookmarks("SHEET_ID2").Select
+          objWord.Selection.Text = (CStr(SHEET_ID2))
+                     
+          'Assign the EXPENSE_TYPE Word bookmark a value
+          objDoc.Bookmarks("EXPENSE_TYPE").Select
+          objWord.Selection.Text = (CStr(Expense_Type))
+             
+          'Assign the TOTAL_AMT Word bookmark a value
+          objDoc.Bookmarks("TOTAL_AMT").Select
+          objWord.Selection.Text = Format(CCur(TOTAL_AMT), "$###,###.00")
+             
+          'Assign the TXN_AMT Word bookmark a value
+          objDoc.Bookmarks("TXN_AMT").Select
+          objWord.Selection.Text = Format(CCur(TXN_AMT), "$###,###.00")
+             
+          'Assign the CORRECTED_EXP_AMT Word bookmark a value
+          objDoc.Bookmarks("CORRECTED_EXP_AMT").Select
+          objWord.Selection.Text = Format(CCur(CORRECTED_EXP_AMT), "$###,###.00")
+             
+          'Assign the AMOUNT_DUE1 Word bookmark a value
+          objDoc.Bookmarks("AMOUNT_DUE1").Select
+          objWord.Selection.Text = Format(CCur(AMOUNT_DUE1), "$###,###.00")
+             
+          'Assign the CORRECTED_EXP_TYPE Word bookmark a value
+          objDoc.Bookmarks("CORRECTED_EXP_TYPE").Select
+          objWord.Selection.Text = (CStr(CORRECTED_EXP_TYPE))
+             
+          'Assign the AUDIT_DESCRIPTION Word bookmark a value
+          objDoc.Bookmarks("AUDIT_DESCRIPTION").Select
+          objWord.Selection.Text = (CStr(AUDIT_DESCRIPTION))
+             
+          'Assign the REQUIRED_ACTION Word bookmark a value
+          objDoc.Bookmarks("REQUIRED_ACTION").Select
+          objWord.Selection.Text = (CStr(REQUIRED_ACTION))
+             
+          'Assign the AUDIT_ID Word bookmark a value
+          objDoc.Bookmarks("AUDIT_ID").Select
+          objWord.Selection.Text = (CStr(AUDIT_ID))
+             
+          'Populate the contact message bookmarks on the expense letter if amount due if greater than $30
+          If AMOUNT_DUE1 > 30 Then
+           
+            'Assign the CONTACT1 Word bookmark a value
+            CONTACT1 = "Please contact"
+            objDoc.Bookmarks("CONTACT1").Select
+            objWord.Selection.Text = (CStr(CONTACT1))
+           
+            'Assign the CONTACT2 Word bookmark a email hyperlink value
+            objDoc.Bookmarks("CONTACT2").Select
+            objWord.Selection.Text = (CStr(CONTACT2))
+            objWord.Selection.Hyperlinks.Add Anchor:=objDoc.Bookmarks("CONTACT2").Range, _
+                                             Address:="mailto:APAudit@business.com", _
+                                             TextToDisplay:="APAudit@business.com"
+           
+            'Assign the CONTACT3 Word bookmark a value
+            CONTACT3 = "to discuss reimbursement through payroll."
+            objDoc.Bookmarks("CONTACT3").Select
+            objWord.Selection.Text = (CStr(CONTACT3))
+                                 
+          End If
+             
+          'If letter sent once before, add second notifier information to expense letter
+          If EMAILED_NUM = 1 Then
+             
+             'Assign the NOTICE Word bookmark a value
+             objDoc.Bookmarks("NOTICE").Select
+             objWord.Selection.Text = "2nd Notice"
+             
+             'Assign the NOTICEMSG Word bookmark a value
+             objDoc.Bookmarks("NOTICEMSG").Select
+             objWord.Selection.Text = "A Response is Required"
+             
+          End If
+          
+          'If letter sent twice before, add third notifier information to expense letter
+          If EMAILED_NUM = 2 Then
+             'Assign the NOTICE Word bookmark a value
+             objDoc.Bookmarks("NOTICE").Select
+             objWord.Selection.Text = "3rd Notice"
+             
+             'Assign the NOTICEMSG Word bookmark a value
+             objDoc.Bookmarks("NOTICEMSG").Select
+             objWord.Selection.Text = "A Copy of the Email Was Sent to Your EVP"
+          End If
+           
+             
+          'Save updated template as a Word document
+          objDoc.SaveAs FileName:=strPath & EMPL_ID & "-AL-" & AUDIT_ID & ".doc"
+          
+          'Close the Word document
+          objDoc.Close
+         
+          'Set body of email and email attachment path
+          strBODY = "Please see the attachment concerning an approved expense report for " & EMPL_ID & "-AL-" & AUDIT_ID & ".doc"
+          strATTACH = strPath & EMPL_ID & "-AL-" & AUDIT_ID & ".doc"
+
+          'CREATE EMAIL MESSAGE USING CDO AND SMTP
+          Set iMsg = CreateObject("CDO.MESSAGE")
+          With iMsg
+             .Configuration = iCfg
+             .To = EMAIL
+             .CC = EMAILID2 & "," & EMAILID3 & "," & EMAILID4 & ", APAudit@business.com"
+             .Subject = "Audit Expense Report: " & EMPL_ID & "-AL-" & AUDIT_ID & ".doc"
+             .TextBody = strBODY
+             .AddAttachment (strATTACH)
+             .Send
+          End With
+          Set iMsg = Nothing
+                   
+          'Turn off warning messages Access creates on action queries
+          DoCmd.SetWarnings False
+                   
+          'Update Audit Research record to show that it was emailed
+          DoCmd.RunSQL "UPDATE TBL_AUDIT_RESEARCH_EXPENSE SET EMAILED_LETTER = 0, EMAILED_DATE = NOW(), EMAILED_NUM = [EMAILED_NUM]+1 " _
+              & "WHERE ID = " & AUDIT_FINDING_ID & ""
+                   
+          'Turn on warning messages Access creates on action queries
+          DoCmd.SetWarnings True
+                   
+        End If
+        
+        'CREATE AND EMAIL PAYROLL DEDUCTION LETTER
+        
+        'Check if Expense letter is for Payroll deduction
+        If PAYROLL_DEDUCTION = True And EMAILED_IPA_DATE = "" Then
+                  
+          'Create a new Word document using the InstallPlanAuthTemplate.dot template
+          Set objDoc = objWord.Documents.Add(strWordTemplate2)
+        
+          'POPULATE THE BOOKMARKS WITHIN THE WORD DOCUMENT WITH THE VALUES IN THE PAYROLL DEDUCTION LETTER QUERY
+          'NOTE - IF A BOOKMARK NAME CHANGES ON THE TEMPLATE - THIS MUST BE UPDATED
+          
+          'Assign the AUDIT_DESCRIPTION Word bookmark a value
+          objDoc.Bookmarks("AUDIT_DESCRIPTION").Select
+          objWord.Selection.Text = (CStr(AUDIT_DESCRIPTION))
+          
+          'Assign the EMPLOYEE_NAME1 Word bookmark a value
+          objDoc.Bookmarks("EMPLOYEE_NAME1").Select
+          objWord.Selection.Text = (CStr(EMPLOYEE_NAME1))
+        
+          'Assign the SHEETI_ID1 Word bookmark a value
+          objDoc.Bookmarks("SHEET_ID1").Select
+          objWord.Selection.Text = (CStr(SHEET_ID1))
+          
+          'Assign the APPROVAL_DT Word bookmark a value
+          objDoc.Bookmarks("APPROVAL_DT").Select
+          objWord.Selection.Text = (CStr(APPROVAL_DT))
+          
+          'Assign the EXPENSE_TYPE Word bookmark a value
+          objDoc.Bookmarks("EXPENSE_TYPE").Select
+          objWord.Selection.Text = (CStr(Expense_Type))
+        
+          'Assign the TOTAL_AMT Word bookmark a value
+          objDoc.Bookmarks("TOTAL_AMT").Select
+          objWord.Selection.Text = Format(CCur(TOTAL_AMT), "$###,###.00")
+             
+          'Assign the TXN_AMT Word bookmark a value
+          objDoc.Bookmarks("TXN_AMT").Select
+          objWord.Selection.Text = Format(CCur(TXN_AMT), "$###,###.00")
+             
+          'Assign the CORRECTED_EXP_AMT Word bookmark a value
+          objDoc.Bookmarks("CORRECTED_EXP_AMT").Select
+          objWord.Selection.Text = Format(CCur(CORRECTED_EXP_AMT), "$###,###.00")
+             
+          'Assign the AMOUNT_DUE1 Word bookmark a value
+          objDoc.Bookmarks("AMOUNT_DUE1").Select
+          objWord.Selection.Text = Format(CCur(AMOUNT_DUE1), "$###,###.00")
+          
+          'Assign the SHEET_ID2 Word bookmark a value
+          objDoc.Bookmarks("SHEET_ID2").Select
+          objWord.Selection.Text = (CStr(SHEET_ID2))
+          
+          'Assign the NBR_PAYMENTS Word bookmark a value
+          objDoc.Bookmarks("NBR_PAYMENTS").Select
+          objWord.Selection.Text = (CStr(NBR_PAYMENTS))
+          
+          'Assign the PAYMENT_AMT Word bookmark a value
+          objDoc.Bookmarks("PAYMENT_AMT").Select
+          objWord.Selection.Text = Format(CCur(PAYMENT_AMT), "$###,###.00")
+          
+          'Assign the FINAL_PAYMENT_AMT Word bookmark a value
+          objDoc.Bookmarks("FINAL_PAYMENT_AMT").Select
+          objWord.Selection.Text = Format(CCur(FINAL_PAYMENT_AMT), "$###,###.00")
+          
+          'Assign the EMPLOYEE_NAME2 Word bookmark a value
+          objDoc.Bookmarks("EMPLOYEE_NAME2").Select
+          objWord.Selection.Text = (CStr(EMPLOYEE_NAME2))
+          
+          'Assign the SHEET_ID3 Word bookmark a value
+          objDoc.Bookmarks("SHEET_ID3").Select
+          objWord.Selection.Text = (CStr(SHEET_ID3))
+          
+          'Assign the AMOUNT_DUE2 Word bookmark a value
+          objDoc.Bookmarks("AMOUNT_DUE2").Select
+          objWord.Selection.Text = Format(CCur(AMOUNT_DUE2), "$###,###.00")
+               
+          'Save updated template as a Word document
+          objDoc.SaveAs FileName:=strPath & EMPL_ID & "-IPA-" & AUDIT_ID & ".doc"
+          
+          'Close the Word document
+          objDoc.Close
+        
+          'Set body of email and email attachment path
+          strBODY = "Please see the attachment concerning an approved expense report for " & EMPL_ID & "-IPA-" & AUDIT_ID & ".doc"
+          strATTACH = strPath & EMPL_ID & "-IPA-" & AUDIT_ID & ".doc"
+          
+          
+          'CREATE EMAIL MESSAGE USING CDO AND SMTP
+          Set iMsg = CreateObject("CDO.MESSAGE")
+          With iMsg
+             .Configuration = iCfg
+             .To = EMAIL
+             .CC = EMAILID2
+             .Subject = "Installment Plan Authorization Form: " & EMPL_ID & "-IPA-" & AUDIT_ID & ".doc"
+             .TextBody = strBODY
+             .AddAttachment (strATTACH)
+             .Send
+          End With
+          Set iMsg = Nothing
+          
+          'Turn off warning messages Access creates on action queries
+          DoCmd.SetWarnings False
+                   
+          'Update Audit Research record to show that it was emailed
+          DoCmd.RunSQL "UPDATE TBL_AUDIT_RESEARCH_EXPENSE SET EMAILED_LETTER = 0, EMAILED_IPA_DATE = NOW() " _
+              & "WHERE ID = " & AUDIT_FINDING_ID & ""
+                   
+          'Turn on warning messages Access creates on action queries
+          DoCmd.SetWarnings True
+        
+        End If
+        
+        'Move to the next record in the query qry_export_audit_findings_to_word data
+        .MoveNext
+        
+      Loop
+     
+    End With
+      
+    'Close the unique staging query recordset
+    rstUnique.Close
+    
+    'Set the recordset variable rstUnique to nothing
+    Set rstUnique = Nothing
+      
+    'Set the rstUnique recordset to the query results for voucher letters to create
+    Set rstUnique = CurrentDb.OpenRecordset("qry_export_voucher_findings_to_word")
+    
+    With rstUnique
+      
+      'Cycle through each record within the voucher letter query
+      Do Until .EOF
+      
+        'ASSIGN VALUES TO THE VARIABLES FROM THE VOUCHER LETTER QUERY RESULT FIELDS
+        EMPLOYEE = Nz(rstUnique.Fields(0).Value)
+        VOUCHER_ID1 = Nz(rstUnique.Fields(1).Value)
+        EMPLID = Nz(rstUnique.Fields(2).Value)
+        VOUCHER_ID2 = Nz(rstUnique.Fields(3).Value)
+        Vendor_Id = Nz(rstUnique.Fields(4).Value)
+        GROSS_AMT = Nz(rstUnique.Fields(5).Value)
+        Invoice_ID = Nz(rstUnique.Fields(6).Value)
+        ENTERED_DT = Nz(rstUnique.Fields(7).Value)
+        AUDIT_DESCRIPTION = Nz(rstUnique.Fields(8).Value)
+        REQUIRED_ACTION = Nz(rstUnique.Fields(9).Value)
+        AUDIT_ID = Nz(rstUnique.Fields(10).Value)
+        EMAILID = Nz(rstUnique.Fields(11).Value)
+        BUSINESS_UNIT = Nz(rstUnique.Fields(12).Value)
+        Vendor_Name = Nz(rstUnique.Fields(13).Value)
+        GL_CODE = Nz(rstUnique.Fields(14).Value)
+        CORRECT_GL_CODE = Nz(rstUnique.Fields(15).Value)
+        FREIGHT_TAX_FUEL_AMT = Nz(rstUnique.Fields(16).Value)
+        CORRECTED_FREIGHT_TAX_FUEL_AMT = Nz(rstUnique.Fields(17).Value)
+        SUP_EMAILID = Nz(rstUnique.Fields(18).Value)
+        AUDIT_FINDING_ID = Nz(rstUnique.Fields(19).Value)
+        
+        'Create a new Word document using the VoucherAuditTemplate.dot template
+        Set objDoc = objWord.Documents.Add(strVchTemplate)
+        
+        
+        'POPULATE THE BOOKMARKS WITHIN THE WORD DOCUMENT WITH THE VALUES IN THE VOUCHER LETTER QUERY
+        'NOTE - IF A BOOKMARK NAME CHANGES ON THE TEMPLATE - THIS MUST BE UPDATED
+          
+        'Assign the EMPLOYEE Word bookmark a value
+        objDoc.Bookmarks("EMPLOYEE").Select
+        objWord.Selection.Text = (CStr(EMPLOYEE))
+              
+        'Assign the VOUCHER_ID1 Word bookmark a value
+        objDoc.Bookmarks("VOUCHER_ID1").Select
+        objWord.Selection.Text = (CStr(VOUCHER_ID1))
+        
+        'Assign the BUSINESS_UNIT Word bookmark a value
+        objDoc.Bookmarks("BUSINESS_UNIT").Select
+        objWord.Selection.Text = (CStr(BUSINESS_UNIT))
+        
+        'Assign the EMPLID Word bookmark a value
+        objDoc.Bookmarks("EMPLID").Select
+        objWord.Selection.Text = (CStr(EMPLID))
+        
+        'Assign the VOUCHER_ID2 Word bookmark a value
+        objDoc.Bookmarks("VOUCHER_ID2").Select
+        objWord.Selection.Text = (CStr(VOUCHER_ID2))
+        
+        'Assign the ENTERED_DT Word bookmark a value
+        objDoc.Bookmarks("ENTERED_DT").Select
+        objWord.Selection.Text = (CStr(ENTERED_DT))
+        
+        'Assign the INVOICE_ID Word bookmark a value
+        objDoc.Bookmarks("INVOICE_ID").Select
+        objWord.Selection.Text = (CStr(Invoice_ID))
+        
+        'Assign the GROSS_AMT Word bookmark a value
+        objDoc.Bookmarks("GROSS_AMT").Select
+        objWord.Selection.Text = Format(CCur(GROSS_AMT), "$###,###.00")
+        
+        'Assign the VENDOR_ID Word bookmark a value
+        objDoc.Bookmarks("VENDOR_ID").Select
+        objWord.Selection.Text = (CStr(Vendor_Id))
+      
+        'Assign the VENDOR_NAME Word bookmark a value
+        objDoc.Bookmarks("VENDOR_NAME").Select
+        objWord.Selection.Text = (CStr(Vendor_Name))
+
+        'Populate the GL Correction information if values exist
+        If CORRECT_GL_CODE <> "" Then
+          
+          'Assign the GL_CODE_DESC Word bookmark a value
+          objDoc.Bookmarks("GL_CODE_DESC").Select
+          objWord.Selection.Text = "GL Code Used:"
+          
+          'Assign the GL_CODE Word bookmark a value
+          objDoc.Bookmarks("GL_CODE").Select
+          objWord.Selection.Text = (CStr(GL_CODE))
+          
+          'Assign the CORRECT_GL_CODE_DESC Word bookmark a value
+          objDoc.Bookmarks("CORRECT_GL_CODE_DESC").Select
+          objWord.Selection.Text = "Correct GL Code:"
+                  
+          'Assign the CORRECT_GL_CODE Word bookmark a value
+          objDoc.Bookmarks("CORRECT_GL_CODE").Select
+          objWord.Selection.Text = (CStr(CORRECT_GL_CODE))
+          
+        End If
+        
+        'Populate the Freight Correction information if values exist
+        If CORRECTED_FREIGHT_TAX_FUEL_AMT <> 0 Then
+          
+          'Assign the FREIGHT_AMT_DESC Word bookmark a value
+          objDoc.Bookmarks("FREIGHT_AMT_DESC").Select
+          objWord.Selection.Text = "Freight/Sales Tax/Fuel Amt Keyed:"
+          
+          'Assign the FREIGHT_TAX_FUEL_AMT Word bookmark a value
+          objDoc.Bookmarks("FREIGHT_TAX_FUEL_AMT").Select
+          objWord.Selection.Text = Format(CCur(FREIGHT_TAX_FUEL_AMT), "$###,###.00")
+          
+          'Assign the CORRECT_FREIGHT_AMT_DESC Word bookmark a value
+          objDoc.Bookmarks("CORRECT_FREIGHT_AMT_DESC").Select
+          objWord.Selection.Text = "Correct Freight/Sales Tax/Fuel Amount:"
+        
+          'Assign the CORRECTED_FREIGHT_TAX_FUEL_AMT Word bookmark a value
+          objDoc.Bookmarks("CORRECTED_FREIGHT_TAX_FUEL_AMT").Select
+          objWord.Selection.Text = Format(CCur(CORRECTED_FREIGHT_TAX_FUEL_AMT), "$###,###.00")
+        
+        End If
+            
+        'Assign the AUDIT_DESCRIPTION Word bookmark a value
+        objDoc.Bookmarks("AUDIT_DESCRIPTION").Select
+        objWord.Selection.Text = (CStr(AUDIT_DESCRIPTION))
+             
+        'Assign the REQUIRED_ACTION Word bookmark a value
+        objDoc.Bookmarks("REQUIRED_ACTION").Select
+        objWord.Selection.Text = (CStr(REQUIRED_ACTION))
+             
+        'Assign the AUDIT_ID Word bookmark a value
+        objDoc.Bookmarks("AUDIT_ID").Select
+        objWord.Selection.Text = (CStr(AUDIT_ID))
+      
+        'Save updated template as a Word document
+        objDoc.SaveAs FileName:=strPath & EMPLID & "-VAF-" & AUDIT_ID & ".doc"
+        
+        'Close the Word document
+        objDoc.Close
+       
+        'Set body of email and email attachment path
+        strBODY = "Please see the attachment concerning an approved voucher for " & EMPLID & "-VAF-" & AUDIT_ID & ".doc"
+        strATTACH = strPath & EMPLID & "-VAF-" & AUDIT_ID & ".doc"
+        
+        'CREATE EMAIL MESSAGE USING CDO AND SMTP
+        Set iMsg = CreateObject("CDO.MESSAGE")
+        With iMsg
+           .Configuration = iCfg
+           .To = EMAILID
+           .CC = SUP_EMAILID
+           .Subject = "Voucher Audit Finding Notification: " & EMPLID & "-VAF-" & AUDIT_ID & ".doc"
+           .TextBody = strBODY
+           .AddAttachment (strATTACH)
+           .Send
+        End With
+        Set iMsg = Nothing
+        
+        'Turn off warning messages Access creates on action queries
+        DoCmd.SetWarnings False
+                 
+        'Update Audit Research record to show that it was emailed
+        DoCmd.RunSQL "UPDATE TBL_AUDIT_RESEARCH_VOUCHER SET EMAILED_LETTER = 0, EMAILED_DATE = NOW(), EMAILED_NUM = [EMAILED_NUM]+1 " _
+            & "WHERE ID = " & AUDIT_FINDING_ID & ""
+                  
+        'Turn on warning messages Access creates on action queries
+        DoCmd.SetWarnings True
+                   
+        
+        
+        
+      .MoveNext
+      Loop
+    End With
+     
+    'Close the unique staging query recordset
+    rstUnique.Close
+    
+    'Set the recordset variable rstUnique to nothing
+    Set rstUnique = Nothing
+    
+    'Close the Word application
+    objWord.Quit
+    
+    'Set the objDoc variable rstUnique to nothing
+    Set objDoc = Nothing
+    
+    'Set the objWord variable rstUnique to nothing
+    Set objWord = Nothing
+     
+    'Set email configuration settings to nothing
+    Set iCfg = Nothing
+    
+    'Change the mouse pointer to regular pointer
+    DoCmd.Hourglass False
+
+    
+Exit_cmd_CreateAuditLetters_Click:
+    Exit Sub
+
+Err_cmd_CreateAuditLetters_Click:
+    MsgBox Err.DESCRIPTION
+    objWord.Quit
+    DoCmd.Hourglass False
+    Resume Exit_cmd_CreateAuditLetters_Click
+    
+End Sub
+Private Sub cmd_open_reporting_frm_Click()
+On Error GoTo Err_cmd_open_reporting_frm_Click
+
+    Dim stDocName As String
+    Dim stLinkCriteria As String
+
+    stDocName = "frm_reporting"
+    DoCmd.OpenForm stDocName, , , stLinkCriteria
+
+Exit_cmd_open_reporting_frm_Click:
+    Exit Sub
+
+Err_cmd_open_reporting_frm_Click:
+    MsgBox Err.DESCRIPTION
+    Resume Exit_cmd_open_reporting_frm_Click
+    
+End Sub
