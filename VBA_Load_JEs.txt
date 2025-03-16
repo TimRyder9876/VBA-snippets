@@ -1,3 +1,5 @@
+### EXTRACT JOURNAL ENTRIES FROM A BILLING SYSTEM DATABASE AND CONVERT TO PEOPLESOFT ACCOUNT STRUCTURE ###
+
 Function TestConnection(ByVal strConnect As String) As String
 
 Dim con As ADODB.Connection
