@@ -1,0 +1,138 @@
+Option Compare Database
+Option Explicit
+
+Private Sub Form_Open(Cancel As Integer)
+    
+    DoCmd.Maximize
+End Sub
+
+Private Sub IMPORT_DATA_Click()
+    On Error GoTo Error_File
+  
+    'Variable for connecting to VAST database
+    Dim strCnct As String
+    Dim strFY, strFM As Variant
+    Dim intFY, intFM, intPeriod As Integer
+    
+    
+    'Variables Used in the Extracts
+    Dim strChargeQuery As String
+    Dim strControlQuery As String
+ 
+    If IsNull(FM) Or IsNull(FY) Then
+      MsgBox "Please enter the values (YEAR, MONTH)"
+      Exit Sub
+    End If
+         
+    strFY = Me!FY
+    strFM = Me!FM
+    intFY = Me!FY
+    intFM = Me!FM
+    intPeriod = intFY * 12 + intFM
+    
+    
+    DoCmd.SetWarnings False
+    DoCmd.Hourglass True
+         
+    '*** DELETE RECORD IN THE CHARGES TABLE FOR THE PERIOD SELECTED ***
+    DoCmd.RunSQL "DELETE * From TBL_CHARGES_PROD WHERE FY = " & strFY & " AND FP = " & strFM
+                  
+    
+    '*** DELETE RECORD IN THE CONTROL TOTAL TABLE FOR THE PERIOD SELECTED ***
+    DoCmd.RunSQL "DELETE * From TBL_CONTROL_TOTALS WHERE FY = " & strFY & " AND FP = " & strFM
+
+
+'*** LOAD DATA FROM BILLING DATABASE ***
+
+    strCnct = "ODBC;DRIVER={Oracle in ORA122CL_64};DBQ=DATABASE; UID=ID; PWD=Password"
+
+    'Create the KGEN Journal Entry Passthrough query
+    strChargeQuery = DLookup("[QUERY_1]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'KGEN'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_2]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'KGEN'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_3]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'KGEN'")
+  
+
+    DoCmd.DeleteObject acQuery, "KGEN_EXTRACT"
+    Call CreateSPT("KGEN_EXTRACT", strChargeQuery, strCnct)
+    DoCmd.OpenQuery "QRY_KGEN_APPEND_CHARGES"
+
+    'Create the KGEN Journal Entry Control Total Passthrough query
+    strControlQuery = DLookup("[QUERY_1]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'KGEN'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_2]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'KGEN'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_3]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'KGEN'")
+    DoCmd.DeleteObject acQuery, "KGEN_CONTROL_EXTRACT"
+    Call CreateSPT("KGEN_CONTROL_EXTRACT", strControlQuery, strCnct)
+    DoCmd.OpenQuery "QRY_KGEN_APPEND_CONTROL_CHARGES"
+'*** LOAD CSS FOR DATA 2016-09 AND LATER ***
+If intPeriod > 99999 Then 'put this in place to not use it while Kgen reloads
+If intPeriod > 24200 Then
+
+    '*** LOAD DATA FROM CSS PBACRM DATABASE ***
+
+    strCnct = "ODBC;DRIVER={Oracle in OraClient12Home1};DBQ=DATABASE2; UID=ID2; PWD=Passwrod2"
+
+    'Create the PBACRM Journal Entry Passthrough query
+    strChargeQuery = DLookup("[QUERY_1]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_2]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_3]", "QUERY_EXTRACTS", "[TYPE] = 'CHARGE' AND [SYSTEM] = 'CSS'")
+    DoCmd.DeleteObject acQuery, "PBACRM_EXTRACT"
+    Call CreateSPT("PBACRM_EXTRACT", strChargeQuery, strCnct)
+    DoCmd.OpenQuery "QRY_PBACRM_APPEND_CHARGES"
+
+    'Create the PBACRM Journal Entry Control Total Passthrough query
+    strControlQuery = DLookup("[QUERY_1]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_2]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_3]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_4]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_5]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_6]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'") _
+                  & strFY & strFM _
+                  & DLookup("[QUERY_7]", "QUERY_EXTRACTS", "[TYPE] = 'CONTROL' AND [SYSTEM] = 'CSS'")
+
+
+    DoCmd.DeleteObject acQuery, "PBACRM_CONTROL_EXTRACT"
+    Call CreateSPT("PBACRM_CONTROL_EXTRACT", strControlQuery, strCnct)
+    DoCmd.OpenQuery "QRY_PBACRM_APPEND_CONTROL_CHARGES"
+
+
+
+    '*** LOAD COMPLETE ***
+
+    MsgBox ("All data is loaded")
+    
+
+Exit_IMPORT_DATA_Click:
+    DoCmd.SetWarnings True
+    DoCmd.Hourglass False
+    Exit Sub
+  
+Error_File:
+    MsgBox Err.Description
+    Resume Exit_IMPORT_DATA_Click
+
+End Sub
+Private Sub cmd_exit_app_Click()
+    On Error GoTo Err_cmd_exit_app_Click
+
+    DoCmd.Quit
+
+Exit_cmd_exit_app_Click:
+    Exit Sub
+
+Err_cmd_exit_app_Click:
+    MsgBox Err.Description
+    Resume Exit_cmd_exit_app_Click
+    
+End Sub
+
