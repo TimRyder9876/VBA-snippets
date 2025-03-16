@@ -217,6 +217,8 @@ Err:
 
 End Sub
 
+------------------------------------------------------------------------------
+
 Private Sub Workbook_Open()
 
     Dim myValue As Variant
@@ -283,6 +285,9 @@ Private Sub Workbook_Open()
     
          
 End Sub
+
+------------------------------------------------------------------------------
+
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
 On Error Resume Next
     'Unprotect the workbook
@@ -317,6 +322,9 @@ On Error Resume Next
     
    
 End Sub
+
+------------------------------------------------------------------------------
+
 Sub test2()
     Dim i As Integer
     Dim j As Integer
@@ -331,6 +339,8 @@ Sub test2()
 
 
 End Sub
+
+------------------------------------------------------------------------------
 
 Function VBATrusted() As Boolean
     On Error Resume Next
