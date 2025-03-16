@@ -6,6 +6,8 @@ Private Sub Form_Open(Cancel As Integer)
     DoCmd.Maximize
 End Sub
 
+------------------------------------------------------------------
+
 Private Sub IMPORT_DATA_Click()
     On Error GoTo Error_File
   
@@ -122,6 +124,9 @@ Error_File:
     Resume Exit_IMPORT_DATA_Click
 
 End Sub
+
+------------------------------------------------------------------
+
 Private Sub cmd_exit_app_Click()
     On Error GoTo Err_cmd_exit_app_Click
 
