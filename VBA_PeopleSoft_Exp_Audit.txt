@@ -46,6 +46,8 @@ Private Sub audit_type_Change()
 
 End Sub
 
+------------------------------------------------------------------------------
+
 Private Sub cmd_import_ps_data_Click()
 On Error GoTo Err_cmd_import_ps_data_Click
 
@@ -365,6 +367,7 @@ Err_cmd_import_ps_data_Click:
     
 End Sub
 
+------------------------------------------------------------------------------
 
 Private Sub Form_Close()
 
@@ -378,6 +381,8 @@ Private Sub Form_Close()
         DoCmd.SetWarnings True
 
 End Sub
+
+-----------------------------------------------------------------------------
 
 Private Sub Form_Load()
         
@@ -424,7 +429,7 @@ Private Sub Form_Load()
         
 End Sub
 
-
+-------------------------------------------------
 
 Private Sub CMD_REFRESH_Click()
 On Error GoTo Err_CMD_REFRESH_Click
@@ -491,6 +496,8 @@ Err_CMD_REFRESH_Click:
     
 End Sub
 
+------------------------------------------------------------------------------
+
 Private Sub cmd_save_record_Click()
 On Error GoTo Err_cmd_save_record_Click
 
@@ -505,6 +512,8 @@ Err_cmd_save_record_Click:
     Resume Exit_cmd_save_record_Click
     
 End Sub
+
+------------------------------------------------------------------------------
 
 Private Sub cmd_open_audit_findings_frm_Click()
 On Error GoTo Err_cmd_open_audit_findings_frm_Click
@@ -530,6 +539,8 @@ Err_cmd_open_audit_findings_frm_Click:
     Resume Exit_cmd_open_audit_findings_frm_Click
     
 End Sub
+
+------------------------------------------------------------------------------
 
 Private Sub cmd_CreateAuditLetters_Click()
 On Error GoTo Err_cmd_CreateAuditLetters_Click
@@ -1179,6 +1190,9 @@ Err_cmd_CreateAuditLetters_Click:
     Resume Exit_cmd_CreateAuditLetters_Click
     
 End Sub
+
+------------------------------------------------------------------------------
+
 Private Sub cmd_open_reporting_frm_Click()
 On Error GoTo Err_cmd_open_reporting_frm_Click
 
